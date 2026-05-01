@@ -1,0 +1,10 @@
+*.csv
+.env
+.env.*
+__pycache__/
+*.ipynb
+logs/
+*.txt
+*.log
+*.png
+data/
