@@ -62,7 +62,7 @@ class ResidualBlock(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
         
-        # 3. 最關鍵的一步：主路徑與高速公路匯合！ F(x) + x
+        # 3.  F(x) + x
         out += identity 
         
         # 4. 相加完之後再做最後一次 ReLU
@@ -87,10 +87,10 @@ class DeepResNet(nn.Module):
         
         # 動態堆疊深層網路 (4 個 Stage，每個 Stage 有多個 Block)
         # 這裡我們設定每個 Stage 有 2 個 Block，神經元數量一路飆升到 512
-        self.layer1 = self._make_layer(out_channels=64, num_blocks=2, stride=1)
-        self.layer2 = self._make_layer(out_channels=128, num_blocks=2, stride=2)
-        self.layer3 = self._make_layer(out_channels=256, num_blocks=2, stride=2)
-        self.layer4 = self._make_layer(out_channels=512, num_blocks=2, stride=2)
+        self.layer1 = self._make_layer(out_channels=64, num_blocks=3, stride=1)
+        self.layer2 = self._make_layer(out_channels=128, num_blocks=4, stride=2)
+        self.layer3 = self._make_layer(out_channels=256, num_blocks=6, stride=2)
+        self.layer4 = self._make_layer(out_channels=512, num_blocks=3, stride=2)
         
         # 全局平均池化，將任何尺寸的特徵圖壓縮成 1x1
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
@@ -106,7 +106,7 @@ class DeepResNet(nn.Module):
 
     def _make_layer(self, out_channels, num_blocks, stride):
         """
-        這是一個工廠方法 (Factory Method)，負責自動幫我們串接殘差區塊。
+        負責自動幫我們串接殘差區塊。
         只有第一個區塊需要降維 (stride)，後面的區塊都保持維度不變。
         """
         strides = [stride] + [1] * (num_blocks - 1)
@@ -120,7 +120,7 @@ class DeepResNet(nn.Module):
         # 1. 預處理
         x = self.prep(x)
         
-        # 2. 穿越 18 層的殘差高速公路
+        # 2. 穿越 18 層的殘差
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
@@ -143,6 +143,9 @@ class ModelTrainer:
 
         self.criterion=nn.CrossEntropyLoss()
         self.optimizer=optim.Adam(self.model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+        
+        # 加入 Cosine 學習率衰減：讓學習率像平滑的溜滑梯一樣，隨 epoch 慢慢降到 0
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.config.epochs)
 
     def fit(self):
         print(f"開始訓練，使用設備: {self.device}")
@@ -159,7 +162,7 @@ class ModelTrainer:
                 self.optimizer.step()
                 runnning_loss += loss.item()
             avg_train_loss= runnning_loss/len(self.trainloader)
-            
+            self.scheduler.step()  # 更新學習率
             self.model.eval()
             correct=0
             total=0
@@ -192,14 +195,15 @@ if __name__ == "__main__":
     )
 
     transform_train = transforms.Compose([
-        transforms.RandomHorizontalFlip(), # 隨機水平翻轉 (資料擴增)
+        transforms.RandomCrop(32, padding=4),     # 隨機平移與裁切 
+        transforms.RandomHorizontalFlip(),        # 隨機水平翻轉
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)) # CIFAR-10 專用標準化參數
     ])
     
     transform_test = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     ])
 
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
